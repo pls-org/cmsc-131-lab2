@@ -95,12 +95,14 @@ and its cause. One improvement and its estimated effect.
 One line per week. Name the subsystem each week finishes and the member
 who owns it.
 
+#### Timeline
+
 | Week | Goal | Owner |
-|---|---|---|
-| 1 | | |
-| 2 | | |
-| 3 | | |
-| 4 | Defense | |
+| --- | --- | --- |
+| 1 | Finish the Subsystem Ownership, start the Design Notes, understand the C interface and cdecl convention, and have the baseline prototype building and running | Percie Louise Y. Samaniego |
+| 2 | Get the recursive `qsort_asm` and `bsearch_asm` working, including partitioning, midpoint calculation, edge cases, and register preservation | Samantha F. Mok & Justin B. Lauricio |
+| 3 | Complete all routines, get `make check` passing, test reentrancy and the hostile caller, finish the Design Notes, add tests, and document the quirks and issues | Percie Louise Y. Samaniego |
+| 4 | Final defense and explanation of the assigned and other subsystems | All members |
 
 ## Subsystem Ownership
 
