@@ -3,3 +3,4 @@
 *.exe
 /bench
 .bench.out
+.vscode/
