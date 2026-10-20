@@ -110,9 +110,9 @@ share one. The commit history must agree with this table.
 
 | Subsystem | Owner |
 |---|---|
-| Sorting (`qsort_asm` and its partition) | |
-| Searching (`bsearch_asm`, `gcd_asm`) | |
-| Convention and measurement (`sum_range_asm`, the benchmarks) | |
+| Sorting (`qsort_asm` and its partition) | Samantha F. Mok |
+| Searching (`bsearch_asm`, `gcd_asm`) | Justin B. Lauricio |
+| Convention and measurement (`sum_range_asm`, the benchmarks) | Percie Louise Y. Samaniego |
 
 ## Quirks and Issues
 
