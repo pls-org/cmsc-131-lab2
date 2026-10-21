@@ -70,6 +70,42 @@ this activity adds. Keep each part short. Update it when the plan changes.
 The four routines `bench.c` expects and what each one returns. Which
 registers you preserve and why.
 
+- `qsort_asm(int *arr, int n)` (`sort.asm`)  
+  Sorts `n` 32-bit signed integers in ascending order using recursive quicksort with Lomuto partitioning. The last element is used as the pivot. Returns nothing.
+
+- `bsearch_asm(int *arr, int n, int key)` (`search.asm`)  
+  Recursively searches the sorted array for `key` and uses `lo + (hi - lo) / 2` to safely compute the midpoint. Returns the index if found, or `-1` otherwise.
+
+- `gcd_asm(int a, int b)` (`util.asm`)  
+  Recursively computes the GCD using Euclid's algorithm. The result is returned in `eax`, while the maximum recursion depth is stored in `gcd_depth`.
+
+- `sum_range_asm(int lo, int hi)` (`util.asm`)  
+  Recursively computes the sum from `lo` to `hi`. It returns `0` when `lo > hi` and calls `bench_callback()` once per C-level call.
+
+### Calling Convention and Register Preservation
+
+The routines follow the `cdecl` calling convention. Arguments are pushed right to left, and the caller cleans up the stack after the function returns.
+
+Caller-saved:
+- `cdecl`
+- `eax`
+- `ecx`
+- `edx`
+
+Callee-saved: 
+- `ebx`
+- `esi`
+- `edi`
+- `ebp`
+
+To preserve `ebp`, we use `enter`/`leave` and save `ebx`, `esi`, and `edi` with `push`/`pop`.
+
+This is necessary to keep the C program's register values intact and to prevent recursive calls from overwriting the parent call's data.
+
+### Design
+
+Sorting and searching are implemented recursively, with each call keeping its own state through its stack frame. The routines are separated into `sort.asm`, `search.asm`, and `util.asm` to keep the implementation modular and easier to compile and link.
+
 ### Solution architecture
 
 A stack frame diagram for one recursive call of `qsort_asm`, showing where
@@ -94,8 +130,6 @@ and its cause. One improvement and its estimated effect.
 
 One line per week. Name the subsystem each week finishes and the member
 who owns it.
-
-#### Timeline
 
 | Week | Goal | Owner |
 | --- | --- | --- |
