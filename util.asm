@@ -93,6 +93,8 @@ _gcd_asm:
 
         global  _sum_range_asm
 _sum_range_asm:
+        ;subsystem owner: Percie Louise Y. Samaniego
+
         enter   0,0
         pusha
 
