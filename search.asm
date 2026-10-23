@@ -1,3 +1,4 @@
+; Searching Subsystem: Justin B. Lauricio 
 ;
 ; search.asm - bsearch_asm, a recursive binary search callable from C.
 ;
