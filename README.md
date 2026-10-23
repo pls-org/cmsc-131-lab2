@@ -70,6 +70,42 @@ this activity adds. Keep each part short. Update it when the plan changes.
 The four routines `bench.c` expects and what each one returns. Which
 registers you preserve and why.
 
+- `qsort_asm(int *arr, int n)` (`sort.asm`)  
+  Sorts `n` 32-bit signed integers in ascending order using recursive quicksort with Lomuto partitioning. The last element is used as the pivot. Returns nothing.
+
+- `bsearch_asm(int *arr, int n, int key)` (`search.asm`)  
+  Recursively searches the sorted array for `key` and uses `lo + (hi - lo) / 2` to safely compute the midpoint. Returns the index if found, or `-1` otherwise.
+
+- `gcd_asm(int a, int b)` (`util.asm`)  
+  Recursively computes the GCD using Euclid's algorithm. The result is returned in `eax`, while the maximum recursion depth is stored in `gcd_depth`.
+
+- `sum_range_asm(int lo, int hi)` (`util.asm`)  
+  Recursively computes the sum from `lo` to `hi`. It returns `0` when `lo > hi` and calls `bench_callback()` once per C-level call.
+
+### Calling Convention and Register Preservation
+
+The routines follow the `cdecl` calling convention. Arguments are pushed right to left, and the caller cleans up the stack after the function returns.
+
+Caller-saved:
+- `cdecl`
+- `eax`
+- `ecx`
+- `edx`
+
+Callee-saved: 
+- `ebx`
+- `esi`
+- `edi`
+- `ebp`
+
+To preserve `ebp`, we use `enter`/`leave` and save `ebx`, `esi`, and `edi` with `push`/`pop`.
+
+This is necessary to keep the C program's register values intact and to prevent recursive calls from overwriting the parent call's data.
+
+### Design
+
+Sorting and searching are implemented recursively, with each call keeping its own state through its stack frame. The routines are separated into `sort.asm`, `search.asm`, and `util.asm` to keep the implementation modular and easier to compile and link.
+
 ### Solution architecture
 
 A stack frame diagram for one recursive call of `qsort_asm`, showing where
@@ -96,11 +132,11 @@ One line per week. Name the subsystem each week finishes and the member
 who owns it.
 
 | Week | Goal | Owner |
-|---|---|---|
-| 1 | | |
-| 2 | | |
-| 3 | | |
-| 4 | Defense | |
+| --- | --- | --- |
+| 1 | Finish the Subsystem Ownership, start the Design Notes, understand the C interface and cdecl convention, and have the baseline prototype building and running | Percie Louise Y. Samaniego |
+| 2 | Get the recursive `qsort_asm` and `bsearch_asm` working, including partitioning, midpoint calculation, edge cases, and register preservation | Samantha F. Mok & Justin B. Lauricio |
+| 3 | Complete all routines, get `make check` passing, test reentrancy and the hostile caller, finish the Design Notes, add tests, and document the quirks and issues | Percie Louise Y. Samaniego |
+| 4 | Final defense and explanation of the assigned and other subsystems | All members |
 
 ## Subsystem Ownership
 
@@ -110,9 +146,9 @@ share one. The commit history must agree with this table.
 
 | Subsystem | Owner |
 |---|---|
-| Sorting (`qsort_asm` and its partition) | |
-| Searching (`bsearch_asm`, `gcd_asm`) | |
-| Convention and measurement (`sum_range_asm`, the benchmarks) | |
+| Sorting (`qsort_asm` and its partition) | Samantha F. Mok |
+| Searching (`bsearch_asm`, `gcd_asm`) | Justin B. Lauricio |
+| Convention and measurement (`sum_range_asm`, the benchmarks) | Percie Louise Y. Samaniego |
 
 ## Quirks and Issues
 
