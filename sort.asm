@@ -1,4 +1,6 @@
 ;
+; Subsystem Owner: Samantha F. Mok
+;
 ; sort.asm - qsort_asm, a recursive quicksort callable from C.
 ;
 ; This is your starting point: it assembles and links as-is, so the build
@@ -68,6 +70,23 @@ _qsort_asm:
         ; scale. The first thing to handle is the empty and single-element
         ; arrays: n <= 1 sorts itself.
         ;
+
+        ; additional quicksort implementation notes
+        ; esp is stack, use to store lo and hi (indices of first and last element), edi points to arr
+        ; assign pointers for starting address -- edi, index (boundary of pivot) -- esi, j (tracks smaller elements) -- ecx, pivot (last element) -- eax
+        ; reserve temp register for swapping elements (ebx), final sorted array p -- also eax
+        ; edx for temp operations
+
+        ; for handling 0 and 1 element arrays
+        ; cmp lo, hi
+        ; jge (done_sorting) 
+
+        ; loop until hi-1 only: each element is 4 bytes so max array size is only 8
+        ; if j encounters a smaller element than pivot, 
+        ; add esi, 1 to move to next element
+        ; mov [j] to temp, then [i] to j and [temp] to i
+        ; when loop ends (j == hi), swap values of hi and i+1 
+        ; eax returns i + 1
 
         popa
         mov     eax, 0
