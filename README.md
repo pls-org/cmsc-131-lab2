@@ -112,6 +112,35 @@ A stack frame diagram for one recursive call of `qsort_asm`, showing where
 the arguments, the return address, saved `ebp`, and the saved registers
 sit. Why `sum_range_asm` is reentrant.
 
+Each C-facing routine ( _qsort_asm, _bsearch_asm, _gcd_asm, _sum_range_asm) works as a cdelc entry wrapper. It handles the initial setup or base checks, then call its internal recursive helper (qsort_inner, bsearch_inner, gcd_inner, sum_range_inner). The helper also follows the cdecl stack rules. 
+
+**Stack frame for one recursive call of `qsort_inner(int *arr, int lo, int hi)`:**
+
+```text
+High Memory
+            ┌────────────┬──────────────────────┐
+  [ebp + 16]│ hi         │ 3rd arg (int)        │ ┐
+            ├────────────┼──────────────────────┤ │ Caller-pushed
+  [ebp + 12]│ lo         │ 2nd arg (int)        │ ├ arguments
+            ├────────────┼──────────────────────┤ │ (cdecl right-to-left)
+  [ebp + 8] │ arr        │ 1st arg (int *)      │ ┘
+            ├────────────┼──────────────────────┤
+  [ebp + 4] │ ret addr   │ Pushed by call       │
+            ├────────────┼──────────────────────┤
+  [ebp + 0] │ saved ebp  │ Pushed by enter 0,0  │ ◄── ebp (frame pointer)
+            ├────────────┼──────────────────────┤
+  [ebp - 4] │ saved ebx  │ Callee-saved (lo/p)  │ ┐
+            ├────────────┼──────────────────────┤ │
+  [ebp - 8] │ saved esi  │ Callee-saved (arr)   │ ├ Preserved registers
+            ├────────────┼──────────────────────┤ │
+  [ebp - 12]│ saved edi  │ Callee-saved (hi)    │ ┘ ◄── esp (stack pointer)
+            └────────────┴──────────────────────┘
+Low Memory (stack grows downward ▼)
+```
+
+**Why `sum_range_asm` is reentrant:**
+sum_range_asm is reentrant because it does not use any mutable static or global storage (.data or .bss) while running. The outer _sum_range_asm calls bench_callback() once, then calls the recursive helper sum_range_inner(lo, hi). Each call keeps its own lo, hi, and intermediate values in registers and its own stack frame. So, if bench_callback() starts another sum_range_asm(1, 100) while sum_range_asm(1, 1000) is still running, the new call gets its own stack frames and does not overwrite the outer call's data. A non-reentrant version that stored the running total in a .bss variable could have that shared value overwritten by the nested call.
+
 ### Measurements
 
 The ratio `bench` reports on `random1000.txt`, `sorted1000.txt`,
