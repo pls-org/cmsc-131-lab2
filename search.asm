@@ -66,6 +66,39 @@ _bsearch_asm:
         ; dividend that cannot be negative.
         ;
 
+        ;----------------------------------------------------------------
+        ; this section implements the function:
+        ; int bsearch_asm(int *arr, int n, int key)
+        ;
+        ; converts function args into (arr, lo, hi, key), 
+        ; and it cleans up afterward.
+        ;
+        ; where the stack frame:
+        ;         int key         [ebp + 16]
+        ;         int n           [ebp + 12]
+        ;         int *arr        [ebp + 8] 
+        ;         return address  [ebp + 4]
+        ;         saved ebp       [ebp + 0]
+        ;----------------------------------------------------------------
+
+        mov     eax, [ebp + 12]         ; eax = n
+        dec     eax                     ; eax = hi = n - 1
+
+        ; cdecl pushes args right to left 
+        push    dword [ebp + 16]        ; push key 
+        push    eax                     ; push hi  
+        push    dword 0                 ; lo = 0
+        push    dword [ebp + 8]         ; push arr
+        call    bsearch_inner
+
+        ; caller removes 4 args x 4 bytes
+        add     esp, 16                
+
+        leave                           ; result is already in eax
+        ret
+
+        
+
         popa
         mov     eax, 0
         leave
