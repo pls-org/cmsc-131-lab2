@@ -59,36 +59,103 @@
 
 segment .text
         global  _qsort_asm
+
 _qsort_asm:
         enter   0,0
-        pusha
+        
+        ; preserve callee-saved registers
+        push    ebx                 ; stack: [ebp - 4]
+        push    esi                 ;        [ebp - 8]
+        push    edi                 ;        [ebp - 12]
 
-        ;
-        ; TODO: sort.
-        ;
-        ; Remember the array elements are four bytes, so index with a *4
-        ; scale. The first thing to handle is the empty and single-element
-        ; arrays: n <= 1 sorts itself.
-        ;
+        ; load arguments
+        mov     edi, [ebp + 8]      ; edi = arr
+        mov     edx, [ebp + 12]     ; edx = n (number of elements)
+        
+        ; base case for empty or 1-element array
+        cmp     edx, 1              ; if n <= 1, exit
+        jle     .done_sorting   
 
-        ; additional quicksort implementation notes
-        ; esp is stack, use to store lo and hi (indices of first and last element), edi points to arr
-        ; assign pointers for starting address -- edi, index (boundary of pivot) -- esi, j (tracks smaller elements) -- ecx, pivot (last element) -- eax
-        ; reserve temp register for swapping elements (ebx), final sorted array p -- also eax
-        ; edx for temp operations
+        dec     edx                 ; edx = n - 1 (hi)
+        mov     ecx, 0              ; ecx = 0 (lo)
 
-        ; for handling 0 and 1 element arrays
-        ; cmp lo, hi
-        ; jge (done_sorting) 
+        ; register convention: 
+        ; edi = arr (base pointer) - holds starting memory address
+        ; ecx = lo or lower bound of array to be sorted 
+        ; edx = hi or upper bound of array to be sorted
 
-        ; loop until hi-1 only: each element is 4 bytes so max array size is only 8
-        ; if j encounters a smaller element than pivot, 
-        ; add esi, 1 to move to next element
-        ; mov [j] to temp, then [i] to j and [temp] to i
-        ; when loop ends (j == hi), swap values of hi and i+1 
-        ; eax returns i + 1
+        call    .qsort_recursive
 
-        popa
-        mov     eax, 0
+.done_sorting:
+        ; restore callee-saved registers
+        pop     edi
+        pop     esi
+        pop     ebx
         leave
         ret
+
+; -------------------------------------------------------------
+; internal recursive function
+; inputs: edi = arr, ecx = lo, edx = hi
+; -------------------------------------------------------------
+.qsort_recursive:
+        cmp     ecx, edx
+        jge     .qsort_return       ; return if lo >= hi
+
+        ; save lo and hi on stack: [esp+4] = lo, [esp] = hi
+        push    ecx                 
+        push    edx                 
+
+; --------------------- PARTITION (refer to pseudocode) ---------------------
+        mov     esi, ecx            ; i = lo
+        dec     esi                 ; i = lo - 1
+        mov     eax, [edi+edx*4]    ; pivot = arr[hi]
+
+; ecx is currently lo, acting as j (element index)
+.part_loop:
+        cmp     ecx, [esp]          ; compare j (ecx) to hi (at [esp])
+        jge     .part_end           ; if j >= hi, partition done
+        
+        cmp     [edi+ecx*4], eax    ; compare arr[j] to pivot
+        jg      .no_swap            ; if arr[j] > pivot, don't swap
+
+        ; swap arr[i+1] and arr[j]
+        inc     esi                 ; i = i + 1
+        mov     ebx, [edi+ecx*4]    ; ebx = arr[j]
+        xchg    ebx, [edi+esi*4]    ; arr[i] = arr[j], ebx = old arr[i]
+        mov     [edi+ecx*4], ebx    ; arr[j] = old arr[i]
+
+.no_swap:
+        inc     ecx                 ; j = j + 1, move to next element
+        jmp     .part_loop          ; loop back
+
+.part_end:
+        inc     esi                 ; i = i + 1 (final pivot index)
+        mov     edx, [esp]          ; edx = hi
+
+        ; swap arr[i+1] and arr[hi]
+        mov     ebx, [edi+esi*4]    ; ebx = arr[i+1]
+        xchg    ebx, [edi+edx*4]    ; arr[hi] = arr[i+1], ebx = old arr[hi]
+        mov     [edi+esi*4], ebx    ; arr[i+1] = old arr[hi]
+
+        ; --------------------- RECURSIVE CALLS ---------------------
+        push    esi                 ; stack: [esp + 8] = lo, [esp + 4] = hi, [esp] = pivot
+
+        ; left call: qsort(arr, lo, pivot - 1)
+        mov     ecx, [esp + 8]      ; ecx = original lo (offset shifted by push esi)
+        mov     edx, esi
+        dec     edx                 ; edx = pivot - 1
+        call    .qsort_recursive
+
+        ; right call: qsort(arr, pivot + 1, hi)
+        pop     esi                 ; restore pivot index (pops 4 bytes)
+        mov     ecx, esi
+        inc     ecx                 ; ecx = pivot + 1
+        mov     edx, [esp]          ; edx = original hi (at esp after pop)
+        call    .qsort_recursive
+
+        ; clear saved lo and hi from stack (2 dwords = 8 bytes)
+        add     esp, 8              ; restore esp to return address location
+
+.qsort_return:
+        ret                         ; pops return address
