@@ -109,7 +109,7 @@ _bsearch_asm:
         ;         int key         [ebp + 20]
         ;         int hi          [ebp + 16]
         ;         int lo          [ebp + 12] 
-        ;         int *rr         [ebp + 8]
+        ;         int *arr         [ebp + 8]
         ;
         ;         return address  [ebp + 4]
         ;         saved ebp       [ebp + 0]
