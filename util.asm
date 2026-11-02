@@ -86,6 +86,48 @@ _gcd_asm:
         ; returns, so a counter that returns to zero on exit prints 0.
         ;
 
+        ; ----------------------------------------------------------------
+        ; gcd_asm(int a, int b)
+        ;
+        ; - wrapper for gcd_asm, it zeroes gcd_depth
+        ; - calls gcd_inner with the first call numbered level 1
+        ; - touches only eax, no callee-saved reg to preserve
+        ; - converts function args into (a, b, level)
+        ;    and it cleans up afterward
+        ; - pushes the args right to left
+        ;
+        ; stack frame: 
+        ;         int b           [ebp + 12]
+        ;         int a           [ebp + 8]
+        ;
+        ;         return address  [ebp + 4]
+        ;         saved ebp       [ebp + 0]
+        ; -----------------------------------------------------------
+
+        ; reset the diagnostic to 0 before each call
+        mov     dword [_gcd_depth], 0 
+
+        ; pushing args (a, b, level) right to left 
+        ; first call counted as 1
+        push    dword 1                 ; push level = 1 
+        push    dword [ebp + 12]        ; push b
+        push    dword [ebp + 8]         ; push a
+        call    gcd_inner
+
+        ; clean up: removes 3 args x 4 bytes
+        add     esp, 12
+
+        leave                           ; result is already in eax
+        ret
+
+        ;--------------------------------------------------------------------------
+        gcd_inner(int a, int b, int level)
+
+        - args pushed right to left convention
+        - clean up after (caller removes them)
+        - 
+
+
         popa
         mov     eax, 0
         leave
