@@ -121,15 +121,76 @@ _gcd_asm:
         ret
 
         ;--------------------------------------------------------------------------
-        gcd_inner(int a, int b, int level)
+        ; gcd_inner(int a, int b, int level)
+        ;
+        ; - args pushed right to left convention
+        ; - clean up after (caller removes them)
+        ; - whoever calls gcd_inner, reads the result from eax
+        ; - uses only eax, ecx, and edx (scratch registers)
+        ; - no callee-saved preserved
+        ; - level lets the recursion count how deep it is
+        ;
+        ; stack frame:
+        ;         args:
+        ;         int level       [ebp + 16] 
+        ;         int b           [ebp + 12]
+        ;         int a           [ebp + 8]
+        ;
+        ;         return address  [ebp + 4]
+        ;         saved ebp       [ebp + 0]
+        ;
+        ; - gcd_depth must hold the deepest (peak) level reached
+        ;   after the whole call returns
+        ; - if we decrement the counter on the way out, 
+        ;   it would end at 0 (if we track the calls)
+        ; - each level records its own level only if it's deeper 
+        ;   than what it is stored
+        ; 
+        ; Euclid:  gcd(a, 0) = a      gcd(a, b) = gcd(b, a % b)
+        ; Operands are nonnegative, so idiv's remainder is the true a % b.
+        ; ---------------------------------------------------------------------------
+gcd_inner:
+        enter   0,0
 
-        - args pushed right to left convention
-        - clean up after (caller removes them)
-        - 
+        mov     ecx, [ebp + 16]         ; ecx = level
 
+        ; if level <= gcd_depth, keep the current peak
+        cmp     ecx, [_gcd_depth]
+        jle     .keep               
 
-        popa
-        mov     eax, 0
+        ; else, (level > gcd_depth) store the new peak
+        mov     [_gcd_depth], ecx       ; gcd_depth = level 
+
+.keep:          ; euclid algo
+        
+        ; base case
+        mov     eax, [ebp + 8]          ; eax = a
+        mov     ecx, [ebp + 12]         ; ecx = b
+
+        ; checks if b == 0 
+        test    ecx, ecx
+        jz      .done                   ; return a (already in eax)
+
+        ; a mod b
+        cdq                             ; sign-extend eax into edx:eax  
+        idiv    ecx                     ; edx = a % b, eax = a / b
+
+        ; builds args for gcd_inner(b, a % b, level + 1)
+        mov     eax, [ebp + 16]         ; eax = level
+        inc     eax                     ; level + 1
+
+        ; push arguments for inner recursive call
+        push    eax                     ; push level + 1
+        push    edx                     ; push a % b
+        push    ecx                     ; push b (new a in gcd_inner(a, b, level))
+
+        ; recursive call
+        call    gcd_inner
+
+        ; clean up 3 args x 4 bytes
+        add     esp, 12
+
+.done:  
         leave
         ret
 
