@@ -86,8 +86,111 @@ _gcd_asm:
         ; returns, so a counter that returns to zero on exit prints 0.
         ;
 
-        popa
-        mov     eax, 0
+        ; ----------------------------------------------------------------
+        ; gcd_asm(int a, int b)
+        ;
+        ; - wrapper for gcd_asm, it zeroes gcd_depth
+        ; - calls gcd_inner with the first call numbered level 1
+        ; - touches only eax, no callee-saved reg to preserve
+        ; - converts function args into (a, b, level)
+        ;    and it cleans up afterward
+        ; - pushes the args right to left
+        ;
+        ; stack frame: 
+        ;         int b           [ebp + 12]
+        ;         int a           [ebp + 8]
+        ;
+        ;         return address  [ebp + 4]
+        ;         saved ebp       [ebp + 0]
+        ; -----------------------------------------------------------
+
+        ; reset the diagnostic to 0 before each call
+        mov     dword [_gcd_depth], 0 
+
+        ; pushing args (a, b, level) right to left 
+        ; first call counted as 1
+        push    dword 1                 ; push level = 1 
+        push    dword [ebp + 12]        ; push b
+        push    dword [ebp + 8]         ; push a
+        call    gcd_inner
+
+        ; clean up: removes 3 args x 4 bytes
+        add     esp, 12
+
+        leave                           ; result is already in eax
+        ret
+
+        ;--------------------------------------------------------------------------
+        ; gcd_inner(int a, int b, int level)
+        ;
+        ; - args pushed right to left convention
+        ; - clean up after (caller removes them)
+        ; - whoever calls gcd_inner, reads the result from eax
+        ; - uses only eax, ecx, and edx (scratch registers)
+        ; - no callee-saved preserved
+        ; - level lets the recursion count how deep it is
+        ;
+        ; stack frame:
+        ;         args:
+        ;         int level       [ebp + 16] 
+        ;         int b           [ebp + 12]
+        ;         int a           [ebp + 8]
+        ;
+        ;         return address  [ebp + 4]
+        ;         saved ebp       [ebp + 0]
+        ;
+        ; - gcd_depth must hold the deepest (peak) level reached
+        ;   after the whole call returns
+        ; - if we decrement the counter on the way out, 
+        ;   it would end at 0 (if we track the calls)
+        ; - each level records its own level only if it's deeper 
+        ;   than what it is stored
+        ; 
+        ; Euclid:  gcd(a, 0) = a      gcd(a, b) = gcd(b, a % b)
+        ; Operands are nonnegative, so idiv's remainder is the true a % b.
+        ; ---------------------------------------------------------------------------
+gcd_inner:
+        enter   0,0
+
+        mov     ecx, [ebp + 16]         ; ecx = level
+
+        ; if level <= gcd_depth, keep the current peak
+        cmp     ecx, [_gcd_depth]
+        jle     .keep               
+
+        ; else, (level > gcd_depth) store the new peak
+        mov     [_gcd_depth], ecx       ; gcd_depth = level 
+
+.keep:          ; euclid algo
+        
+        ; base case
+        mov     eax, [ebp + 8]          ; eax = a
+        mov     ecx, [ebp + 12]         ; ecx = b
+
+        ; checks if b == 0 
+        test    ecx, ecx
+        jz      .done                   ; return a (already in eax)
+
+        ; a mod b
+        cdq                             ; sign-extend eax into edx:eax  
+        idiv    ecx                     ; edx = a % b, eax = a / b
+
+        ; builds args for gcd_inner(b, a % b, level + 1)
+        mov     eax, [ebp + 16]         ; eax = level
+        inc     eax                     ; level + 1
+
+        ; push arguments for inner recursive call
+        push    eax                     ; push level + 1
+        push    edx                     ; push a % b
+        push    ecx                     ; push b (new a in gcd_inner(a, b, level))
+
+        ; recursive call
+        call    gcd_inner
+
+        ; clean up 3 args x 4 bytes
+        add     esp, 12
+
+.done:  
         leave
         ret
 
