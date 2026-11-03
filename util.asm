@@ -195,13 +195,35 @@ gcd_inner:
         ret
 
         global  _sum_range_asm
+; -------------------------------------------------------------------------
+; int sum_range_asm(int lo, int hi)
+; Subsystem Owner: Percie Louise Y. Samaniego
+;
+; This is the main function that C calls to get the sum from lo to hi.
+; It first saves lo and hi in ebx and esi, then calls bench_callback()
+; once before starting the actual recursion in sum_range_inner(). We keep
+; lo and hi in registers because bench_callback() may start another
+; sum_range_asm() call before this one finishes. The outer call must still
+; have its own values after the nested call returns, so each call keeps
+; its values in its own stack frame and saved registers.
+;
+; Reentrancy design:
+;       - Nothing that changes while the function runs is stored in .data/.bss.
+;       - Each call gets its own stack frame and saved registers.
+;       - lo and hi are kept in ebx and esi while the callback is running.
+;       - The recursive helper only uses its own stack frames for its values.
+;
+; Stack frame:
+;   [ebp + 12] = int hi
+;   [ebp + 8]  = int lo
+;   [ebp + 4]  = return address
+;   [ebp + 0]  = saved ebp
+;   [ebp - 4]  = saved ebx
+;   [ebp - 8]  = saved esi
+; -------------------------------------------------------------------------
 _sum_range_asm:
-        ;subsystem owner: Percie Louise Y. Samaniego
 
-        enter   0,0
-        pusha
 
-        ;
         ; TODO: sum_range. Call bench_callback once, then recurse on
         ; (lo + 1, hi) and add lo. The base case lo > hi is 0. Put the
         ; recursion in a second routine that does not call bench_callback.
@@ -209,7 +231,71 @@ _sum_range_asm:
         ; accumulator here is what breaks reentrancy.
         ;
 
-        popa
-        mov     eax, 0
+        enter   0,0
+        push    ebx                     ; preserve callee-saved registers
+        push    esi
+
+        mov     ebx, [ebp + 8]          ; ebx = lo (held across bench_callback)
+        mov     esi, [ebp + 12]         ; esi = hi (held across bench_callback)
+
+        ; Notify harness once per C call; may start a nested sum_range_asm
+        call    _bench_callback
+
+        ; Push arguments right-to-left: sum_range_inner(lo, hi)
+        push    esi                     ; arg 2: hi
+        push    ebx                     ; arg 1: lo
+        call    sum_range_inner
+        add     esp, 8                  ; caller cleans 2 args x 4 bytes
+
+        pop     esi                     ; restore in reverse order
+        pop     ebx
+        leave
+        ret
+
+; -------------------------------------------------------------------------
+; sum_range_inner(int lo, int hi)
+;
+; Internal recursive helper (does NOT call bench_callback):
+;   if lo > hi:  return 0
+;   if lo == hi: return lo   (avoids signed overflow on lo + 1 at INT_MAX)
+;   return lo + sum_range_inner(lo + 1, hi)
+;
+; Stack frame:
+;   [ebp + 12] = int hi
+;   [ebp + 8]  = int lo
+;   [ebp + 4]  = return address
+;   [ebp + 0]  = saved ebp
+;   [ebp - 4]  = saved ebx (holds this frame's `lo` across child call)
+; -------------------------------------------------------------------------
+sum_range_inner:
+        enter   0,0
+        push    ebx                     ; preserve callee-saved ebx
+
+        mov     ebx, [ebp + 8]          ; ebx = lo
+        mov     ecx, [ebp + 12]         ; ecx = hi
+
+        cmp     ebx, ecx
+        jg      .empty_range            ; if lo > hi, sum is 0
+        je      .single_elem            ; if lo == hi, sum is lo
+
+        ; Recursive step: lo + sum_range_inner(lo + 1, hi)
+        lea     eax, [ebx + 1]          ; eax = lo + 1
+        push    ecx                     ; arg 2: hi
+        push    eax                     ; arg 1: lo + 1
+        call    sum_range_inner
+        add     esp, 8                  ; caller cleans 2 args x 4 bytes
+
+        add     eax, ebx                ; eax = lo + sum_range_inner(lo + 1, hi)
+        jmp     .done
+
+.empty_range:
+        xor     eax, eax                ; return 0
+        jmp     .done
+
+.single_elem:
+        mov     eax, ebx                ; return lo
+
+.done:
+        pop     ebx
         leave
         ret

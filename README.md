@@ -87,7 +87,6 @@ registers you preserve and why.
 The routines follow the `cdecl` calling convention. Arguments are pushed right to left, and the caller cleans up the stack after the function returns.
 
 Caller-saved:
-- `cdecl`
 - `eax`
 - `ecx`
 - `edx`
@@ -112,34 +111,40 @@ A stack frame diagram for one recursive call of `qsort_asm`, showing where
 the arguments, the return address, saved `ebp`, and the saved registers
 sit. Why `sum_range_asm` is reentrant.
 
-Each C-facing routine ( _qsort_asm, _bsearch_asm, _gcd_asm, _sum_range_asm) works as a cdelc entry wrapper. It handles the initial setup or base checks, then call its internal recursive helper (qsort_inner, bsearch_inner, gcd_inner, sum_range_inner). The helper also follows the cdecl stack rules. 
+Each C-facing routine (`_qsort_asm`, `_bsearch_asm`, `_gcd_asm`, and `_sum_range_asm`) first sets things up and checks the basic conditions before calling its recursive helper. `bsearch_inner`, `gcd_inner`, and `sum_range_inner` use normal `cdecl` stack frames, while `.qsort_recursive` uses registers to keep track of the array (`edi`), lower bound (`ecx`), and upper bound (`edx`). For each recursive call, the current `lo`, `hi`, and pivot index values are saved on the stack so they can be restored after the call.
 
-**Stack frame for one recursive call of `qsort_inner(int *arr, int lo, int hi)`:**
+**Stack frame for `_qsort_asm` and one active recursive call of `.qsort_recursive`:**
 
 ```text
 High Memory
-            ┌────────────┬──────────────────────┐
-  [ebp + 16]│ hi         │ 3rd arg (int)        │ ┐
-            ├────────────┼──────────────────────┤ │ Caller-pushed
-  [ebp + 12]│ lo         │ 2nd arg (int)        │ ├ arguments
-            ├────────────┼──────────────────────┤ │ (cdecl right-to-left)
-  [ebp + 8] │ arr        │ 1st arg (int *)      │ ┘
-            ├────────────┼──────────────────────┤
-  [ebp + 4] │ ret addr   │ Pushed by call       │
-            ├────────────┼──────────────────────┤
-  [ebp + 0] │ saved ebp  │ Pushed by enter 0,0  │ ◄── ebp (frame pointer)
-            ├────────────┼──────────────────────┤
-  [ebp - 4] │ saved ebx  │ Callee-saved (lo/p)  │ ┐
-            ├────────────┼──────────────────────┤ │
-  [ebp - 8] │ saved esi  │ Callee-saved (arr)   │ ├ Preserved registers
-            ├────────────┼──────────────────────┤ │
-  [ebp - 12]│ saved edi  │ Callee-saved (hi)    │ ┘ ◄── esp (stack pointer)
-            └────────────┴──────────────────────┘
+            ┌────────────┬──────────────────────────┐
+  [ebp + 12]│ n          │ 2nd arg (int)            │ ┐ Caller-pushed args
+            ├────────────┼──────────────────────────┤ ├ to _qsort_asm
+  [ebp + 8] │ arr        │ 1st arg (int *)          │ ┘ (cdecl right-to-left)
+            ├────────────┼──────────────────────────┤
+  [ebp + 4] │ ret addr   │ Return address to C      │
+            ├────────────┼──────────────────────────┤
+  [ebp + 0] │ saved ebp  │ Pushed by enter 0,0      │ ◄── ebp (_qsort_asm)
+            ├────────────┼──────────────────────────┤
+  [ebp - 4] │ saved ebx  │ Callee-saved register    │ ┐
+            ├────────────┼──────────────────────────┤ │ Preserved once in
+  [ebp - 8] │ saved esi  │ Callee-saved register    │ ├ _qsort_asm wrapper
+            ├────────────┼──────────────────────────┤ │
+  [ebp - 12]│ saved edi  │ Callee-saved register    │ ┘
+            ╞════════════╪══════════════════════════╡
+  [esp + 12]│ ret addr   │ Pushed by call           │ ┐
+            ├────────────┼──────────────────────────┤ │ One recursive frame
+  [esp + 8] │ saved lo   │ Pushed ecx (original lo) │ │ of .qsort_recursive
+            ├────────────┼──────────────────────────┤ ├ (cleaned before ret
+  [esp + 4] │ saved hi   │ Pushed edx (original hi) │ │  via pop esi and
+            ├────────────┼──────────────────────────┤ │  add esp, 8)
+  [esp + 0] │ saved p    │ Pushed esi (pivot index) │ ┘ ◄── esp
+            └────────────┴──────────────────────────┘
 Low Memory (stack grows downward ▼)
 ```
 
 **Why `sum_range_asm` is reentrant:**
-sum_range_asm is reentrant because it does not use any mutable static or global storage (.data or .bss) while running. The outer _sum_range_asm calls bench_callback() once, then calls the recursive helper sum_range_inner(lo, hi). Each call keeps its own lo, hi, and intermediate values in registers and its own stack frame. So, if bench_callback() starts another sum_range_asm(1, 100) while sum_range_asm(1, 1000) is still running, the new call gets its own stack frames and does not overwrite the outer call's data. A non-reentrant version that stored the running total in a .bss variable could have that shared value overwritten by the nested call.
+`sum_range_asm` is reentrant because it does not use shared or changeable data in `.data` or `.bss` while running. The outer `_sum_range_asm` saves `ebx` and `esi`, calls `bench_callback()` once, and then calls `sum_range_inner(lo, hi)`. Each call has its own `lo`, `hi`, and temporary values stored in its registers and stack frame. So, if `bench_callback()` starts another `sum_range_asm(1, 100)` while `sum_range_asm(1, 1000)` is still running, the nested call gets its own stack frame and does not overwrite the data of the first call. If we used a shared `.bss` variable for the running total instead, the nested call could overwrite the same value and cause the outer call to get the wrong result.
 
 ### Measurements
 
@@ -149,11 +154,24 @@ and its cause. One improvement and its estimated effect.
 
 | File | Ratio |
 |---|---|
-| `random1000.txt` | |
-| `sorted1000.txt` | |
-| `reverse1000.txt` | |
-| `duplicates.txt` | |
-| `identical.txt` | |
+| `random1000.txt` | 0.63x |
+| `sorted1000.txt` | 166.31x |
+| `reverse1000.txt` | 68.14x |
+| `duplicates.txt` | 47.31x |
+| `identical.txt` | 88.47x |
+
+**Worst case and cause:**
+
+Our worst case is `sorted1000.txt` at `166.31x` (`2.928 ms` vs `0.018 ms`). Basically, `qsort_asm` struggles the most when the array is already sorted. The reason is that our Lomuto partition always chooses the last element, `arr[hi]`, as the pivot. So if the array is already sorted, the pivot is always the biggest element.
+
+Because of that, almost nothing gets separated into the other side. We keep getting `(n - 1)` and `0` partitions, meaning the array is barely being divided at all. This happens again and again for 999 recursive calls, giving us around `499,500` comparisons and `O(n²)` time. So instead of quickly breaking the array into smaller parts, we're basically going through almost the whole array every time.
+
+`sorted1000.txt` is also slower than `reverse1000.txt` (`166.31x` vs `68.14x`) because every `arr[j] <= pivot` check is true in the sorted array. This causes the code to perform `499,500` self-swaps on top of all the comparisons. Meanwhile, `random1000.txt` performs much better at `0.63x` because the values are more naturally divided during partitioning, and `qsort_asm` beats C's `qsort` there because it compares values directly in registers instead of calling `cmp_int` through a function pointer on every comparison. C's `qsort` also avoids our sorted worst-case behavior by using better pivot selection.
+
+**One improvement and estimated effect:**
+One improvement we can make is using a **median-of-three pivot**. Instead of always choosing the last element, we take the middle value from `arr[lo]`, `arr[mid]`, and `arr[hi]` and swap it into `arr[hi]` as the pivot. This helps avoid the problem we had with already sorted or reverse-sorted arrays because the pivot is more likely to be closer to the middle. This should make the partitions more balanced, reducing the work from around `499,500` comparisons (`O(n²)`) to around `10,000` comparisons (`O(n log₂ n)`).
+
+Because of this, `qsort_asm` on `sorted1000.txt` could potentially go from `2.928 ms` to around `0.03–0.04 ms` (narrowing the ratio from `166.31x` down to around `1.7x–2.2x`, an estimated 70x–95x speedup), which is much closer to the `0.037 ms` we got from `random1000.txt`. This is only an estimate, but the main idea is that **a better pivot gives us more balanced splits, which means fewer comparisons, fewer swaps, and faster sorting**.
 
 ### Timeline
 
@@ -188,8 +206,13 @@ did about it.
 
 ### Known issues
 
-- 
+- **Quadratic `O(n²)` runtime and `O(n)` stack depth on sorted, reverse-sorted, and all-equal inputs:** `qsort_asm` becomes much slower on these inputs, reaching `166.31x` on `sorted1000.txt`, `68.14x` on `reverse1000.txt`, and `88.47x` on `identical.txt`. This happens because we always choose `arr[hi]` as the pivot. For these types of arrays, the pivot does not divide the array well, so we keep getting one-sided `(n - 1, 0)` or `(0, n - 1)` splits and a lot of recursive calls. Very large sorted arrays could also use up the call stack. We kept the required Lomuto partitioning and documented median-of-three pivot selection as a possible improvement.
+
+- **Linear recursion depth `O(hi - lo)` in `sum_range_asm`:** `sum_range_asm` can also use a lot of stack space when the range is very large because `sum_range_inner` processes one number at a time using `lo + 1`. So even if the final sum is still valid, the many recursive calls could eventually use up the call stack. We kept the required recursive approach and added a `lo == hi` base case along with `lo > hi` so cases like `sum_range_asm(INT_MAX, INT_MAX)` can stop safely without doing `lo + 1`.
 
 ### Quirks
 
-- 
+- **`xchg` adds extra overhead during swaps:** `sorted1000.txt` (`2.928 ms`) takes almost twice as long as `reverse1000.txt` (`1.606 ms`), even though both do around `499,500` comparisons. In `sort.asm`, we use `xchg` to swap values directly in memory. This has some extra hardware overhead, which becomes noticeable because the sorted case performs a very large number of self-swaps. We kept the current swap because it works correctly, but using `mov`-based swaps could make it a little faster.
+
+- **`bsearch_asm` does not choose a specific index when values are duplicated:** If the same value appears multiple times in `duplicates.txt`, `identical.txt`, or `extremes.txt`, `bsearch_asm` returns the first matching index it happens to find. It does not continue looking for the first or last occurrence. This is fine for our case because the requirement only checks if the returned index contains the correct key, so there is no need for extra searching.
+
