@@ -121,9 +121,12 @@ _qsort_asm:
 
         ; swap arr[i+1] and arr[j]
         inc     esi                 ; i = i + 1
-        mov     ebx, [edi+ecx*4]    ; ebx = arr[j]
-        xchg    ebx, [edi+esi*4]    ; arr[i] = arr[j], ebx = old arr[i]
-        mov     [edi+ecx*4], ebx    ; arr[j] = old arr[i]
+                
+        mov     ebx, [edi+ecx*4]    ; temp1 (ebx) = arr[j]
+        mov     edx, [edi+esi*4]    ; temp2 (edx) = arr[i]
+                
+        mov     [edi+esi*4], ebx    ; arr[i] = temp1 (old arr[j])
+        mov     [edi+ecx*4], edx    ; arr[j] = temp2 (old arr[i])
 
 .no_swap:
         inc     ecx                 ; j = j + 1, move to next element
@@ -134,9 +137,11 @@ _qsort_asm:
         mov     edx, [esp]          ; edx = hi
 
         ; swap arr[i+1] and arr[hi]
-        mov     ebx, [edi+esi*4]    ; ebx = arr[i+1]
-        xchg    ebx, [edi+edx*4]    ; arr[hi] = arr[i+1], ebx = old arr[hi]
-        mov     [edi+esi*4], ebx    ; arr[i+1] = old arr[hi]
+        mov     ebx, [edi+esi*4]    ; temp1 (ebx) = arr[i+1]
+        mov     ecx, [edi+edx*4]    ; temp2 (ecx) = arr[hi]
+        
+        mov     [edi+edx*4], ebx    ; arr[hi] = temp1 (old arr[i+1])
+        mov     [edi+esi*4], ecx    ; arr[i+1] = temp2 (old arr[hi])
 
         ; --------------------- RECURSIVE CALLS ---------------------
         push    esi                 ; stack: [esp + 8] = lo, [esp + 4] = hi, [esp] = pivot
