@@ -154,24 +154,26 @@ and its cause. One improvement and its estimated effect.
 
 | File | Ratio |
 |---|---|
-| `random1000.txt` | 0.63x |
-| `sorted1000.txt` | 166.31x |
-| `reverse1000.txt` | 68.14x |
-| `duplicates.txt` | 47.31x |
-| `identical.txt` | 88.47x |
+| `random1000.txt` | 0.47x |
+| `sorted1000.txt` | 13.54x |
+| `reverse1000.txt` | 10.04x |
+| `duplicates.txt` | 3.25x |
+| `identical.txt` | 5.15x |
 
 **Worst case and cause:**
 
-Our worst case is `sorted1000.txt` at `166.31x` (`2.928 ms` vs `0.018 ms`). Basically, `qsort_asm` struggles the most when the array is already sorted. The reason is that our Lomuto partition always chooses the last element, `arr[hi]`, as the pivot. So if the array is already sorted, the pivot is always the biggest element.
+Our worst case is `sorted1000.txt` at `13.54x` (`0.261 ms` vs. `0.019 ms`). Basically, `qsort_asm` struggles the most when the array is already sorted. This is because our Lomuto partition always chooses the last element, `arr[hi]`, as the pivot. So when the array is already sorted, the pivot will always be the biggest element, which results in unbalanced partitions.
 
 Because of that, almost nothing gets separated into the other side. We keep getting `(n - 1)` and `0` partitions, meaning the array is barely being divided at all. This happens again and again for 999 recursive calls, giving us around `499,500` comparisons and `O(n²)` time. So instead of quickly breaking the array into smaller parts, we're basically going through almost the whole array every time.
 
-`sorted1000.txt` is also slower than `reverse1000.txt` (`166.31x` vs `68.14x`) because every `arr[j] <= pivot` check is true in the sorted array. This causes the code to perform `499,500` self-swaps on top of all the comparisons. Meanwhile, `random1000.txt` performs much better at `0.63x` because the values are more naturally divided during partitioning, and `qsort_asm` beats C's `qsort` there because it compares values directly in registers instead of calling `cmp_int` through a function pointer on every comparison. C's `qsort` also avoids our sorted worst-case behavior by using better pivot selection.
+`sorted1000.txt` is also slower than `reverse1000.txt` (`13.54x` vs. `10.04x`, or `0.261 ms` vs. `0.213 ms`) because every `arr[j] <= pivot` check is true in the sorted array. This causes the code to perform `499,500` self-swaps on top of all the comparisons.
+
+Meanwhile, `random1000.txt` performs much better at `0.47x` because the values are more naturally divided during partitioning. `qsort_asm` also beats C's `qsort` here because it compares values directly in registers instead of calling `cmp_int` through a function pointer on every comparison. C's `qsort` also avoids our sorted worst-case behavior by using better pivot selection.
 
 **One improvement and estimated effect:**
 One improvement we can make is using a **median-of-three pivot**. Instead of always choosing the last element, we take the middle value from `arr[lo]`, `arr[mid]`, and `arr[hi]` and swap it into `arr[hi]` as the pivot. This helps avoid the problem we had with already sorted or reverse-sorted arrays because the pivot is more likely to be closer to the middle. This should make the partitions more balanced, reducing the work from around `499,500` comparisons (`O(n²)`) to around `10,000` comparisons (`O(n log₂ n)`).
 
-Because of this, `qsort_asm` on `sorted1000.txt` could potentially go from `2.928 ms` to around `0.03–0.04 ms` (narrowing the ratio from `166.31x` down to around `1.7x–2.2x`, an estimated 70x–95x speedup), which is much closer to the `0.037 ms` we got from `random1000.txt`. This is only an estimate, but the main idea is that **a better pivot gives us more balanced splits, which means fewer comparisons, fewer swaps, and faster sorting**.
+Because of this, `qsort_asm` on `sorted1000.txt` could potentially go from `0.261 ms` to around `0.03–0.04 ms` (narrowing the ratio from `13.54x` down to around `1.6x–2.1x`, or an estimated `6x–8x` speedup). This would make it much closer to the `0.032 ms` we got from `random1000.txt`. This is only an estimate, but basically, **a better pivot gives us more balanced splits, which means fewer comparisons, fewer swaps, and faster sorting.**
 
 ### Timeline
 
@@ -206,13 +208,13 @@ did about it.
 
 ### Known issues
 
-- **Quadratic `O(n²)` runtime and `O(n)` stack depth on sorted, reverse-sorted, and all-equal inputs:** `qsort_asm` becomes much slower on these inputs, reaching `166.31x` on `sorted1000.txt`, `68.14x` on `reverse1000.txt`, and `88.47x` on `identical.txt`. This happens because we always choose `arr[hi]` as the pivot. For these types of arrays, the pivot does not divide the array well, so we keep getting one-sided `(n - 1, 0)` or `(0, n - 1)` splits and a lot of recursive calls. Very large sorted arrays could also use up the call stack. We kept the required Lomuto partitioning and documented median-of-three pivot selection as a possible improvement.
+- **Quadratic `O(n²)` runtime and `O(n)` stack depth on sorted, reverse-sorted, and all-equal inputs:** `qsort_asm` becomes much slower when the array is already sorted, sorted in reverse, or contains the same values. We got `13.54x` on `sorted1000.txt`, `10.04x` on `reverse1000.txt`, and `5.15x` on `identical.txt`. This happens because we always choose the last element, `arr[hi]`, as the pivot. For these types of arrays, the pivot does not split the values evenly, so one side gets almost the entire array while the other side gets nothing. This means we have to keep going through almost the same number of elements again and again, resulting in more recursive calls and slower sorting. If the array is very large, these repeated calls could also use up too much stack space. We kept the required Lomuto partitioning but included median-of-three pivot selection as a possible improvement.
 
 - **Linear recursion depth `O(hi - lo)` in `sum_range_asm`:** `sum_range_asm` can also use a lot of stack space when the range is very large because `sum_range_inner` processes one number at a time using `lo + 1`. So even if the final sum is still valid, the many recursive calls could eventually use up the call stack. We kept the required recursive approach and added a `lo == hi` base case along with `lo > hi` so cases like `sum_range_asm(INT_MAX, INT_MAX)` can stop safely without doing `lo + 1`.
 
 ### Quirks
 
-- **`xchg` adds extra overhead during swaps:** `sorted1000.txt` (`2.928 ms`) takes almost twice as long as `reverse1000.txt` (`1.606 ms`), even though both do around `499,500` comparisons. In `sort.asm`, we use `xchg` to swap values directly in memory. This has some extra hardware overhead, which becomes noticeable because the sorted case performs a very large number of self-swaps. We kept the current swap because it works correctly, but using `mov`-based swaps could make it a little faster.
+- **Swap overhead (`xchg` vs. `mov`) and self-swaps on sorted inputs:** Initially, `sort.asm` used `xchg` to swap elements, but this turned out to be slower because it uses a hardware lock when swapping values in memory. This made `sorted1000.txt` (`2.928 ms`, `166.31x`) especially slow because it performed `499,500` self-swaps. We replaced `xchg` with `mov`-based swaps using two registers (`ebx`/`edx` inside `.part_loop` and `ebx`/`ecx` at `.part_end`), which reduced the runtime of `sorted1000.txt` to `0.261 ms` (`13.54x`). However, `sorted1000.txt` (`0.261 ms`) is still slightly slower than `reverse1000.txt` (`0.213 ms`) because every `arr[j] <= pivot` check is true for an already sorted array. This means we're still swapping elements even when `arr[i]` and `arr[j]` are actually the same element (`i == j`).
 
 - **`bsearch_asm` does not choose a specific index when values are duplicated:** If the same value appears multiple times in `duplicates.txt`, `identical.txt`, or `extremes.txt`, `bsearch_asm` returns the first matching index it happens to find. It does not continue looking for the first or last occurrence. This is fine for our case because the requirement only checks if the returned index contains the correct key, so there is no need for extra searching.
 
